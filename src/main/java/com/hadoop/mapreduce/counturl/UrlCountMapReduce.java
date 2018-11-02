@@ -8,6 +8,7 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.TaskCounter;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.Tool;
@@ -20,7 +21,7 @@ public class UrlCountMapReduce extends Configured implements Tool {
     /**
      * 获取搜索词
      * 输入：<偏移量，内容>
-     * 输出：<关键词，1>
+     * 输出：<网址，1>
      */
     public static class UrlCountMapper extends Mapper<LongWritable, Text, Text, LongWritable> {
         private final static LongWritable mapOutputValue = new LongWritable(1);
@@ -30,14 +31,14 @@ public class UrlCountMapReduce extends Configured implements Tool {
         protected void setup(Context context) throws IOException, InterruptedException {
             super.setup(context);
         }
-        
+
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
             // TODO
             //根据日志文件分析，第六个字段是url
-            String url=value.toString().split("\t")[5];
+            String url = value.toString().split("\t")[5];
             urlT.set(url);
-            context.write(urlT,mapOutputValue);
+            context.write(urlT, mapOutputValue);
         }
 
         @Override
@@ -51,8 +52,8 @@ public class UrlCountMapReduce extends Configured implements Tool {
 
     /**
      * 按次搜索词频率统计
-     * 输入：<关键词，频率>
-     * 输出：<频率，关键词>
+     * 输入：<网址，频率>
+     * 输出：<频率，网址>
      */
     public static class UrlCountReducer extends Reducer<Text, LongWritable, LongWritable, Text> {
         private final static LongWritable outputValue = new LongWritable();
@@ -65,8 +66,12 @@ public class UrlCountMapReduce extends Configured implements Tool {
         @Override
         public void reduce(Text key, Iterable<LongWritable> values, Context context) throws IOException, InterruptedException {
             //TODO
-
-
+            int sum = 0;
+            for (LongWritable value : values) {
+                sum += value.get();
+            }
+            outputValue.set(sum);
+            context.write(outputValue, key);
         }
 
         @Override
@@ -74,6 +79,17 @@ public class UrlCountMapReduce extends Configured implements Tool {
             super.cleanup(context);
         }
     }
+
+
+    public static Long getTotal() {
+        return total;
+    }
+
+    public static void setTotal(Long total) {
+        UrlCountMapReduce.total = total;
+    }
+
+    private static Long total=0l;
 
     //step 3: Driver ,component job
     public int run(String[] args) throws Exception {
@@ -98,9 +114,13 @@ public class UrlCountMapReduce extends Configured implements Tool {
         //3.4 output
         Path outpath = new Path(args[1]);
         FileOutputFormat.setOutputPath(job, outpath);
-
         //4.submit job
         boolean isSuccess = job.waitForCompletion(true);
+        //设置总条数
+        if (isSuccess){
+            UrlCountMapReduce.setTotal(job.getCounters().findCounter(TaskCounter.MAP_INPUT_RECORDS).getValue());
+            System.out.println("total"+UrlCountMapReduce.getTotal());
+        }
         return isSuccess ? 0 : 1;
     }
 
